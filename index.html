@@ -111,14 +111,14 @@
           <input type="password" id="authPassword" placeholder="비밀번호 입력" />
         </div>
         <div class="button-row" style="justify-content: flex-start;">
-          <button class="btn-dark" onclick="handleLogin()">이메일 로그인</button>
-          <button class="btn-secondary" onclick="handleRegister()">간편 회원가입</button>
+          <button class="btn-dark" onclick="handleEmailLogin()">이메일 로그인</button>
+          <button class="btn-secondary" onclick="handleEmailRegister()">간편 회원가입</button>
         </div>
       </div>
       
       <div id="userInfoBox" class="user-info-box">
         <span>👋 <span id="userEmailDisplay"></span>님 환영합니다! 나만의 문학 멘토링 방이 활성화되었습니다.</span>
-        <button class="btn-secondary" style="height: 32px; padding: 0 12px; font-size: 12px;" onclick="handleLogout()">로그아웃</button>
+        <button class="btn-secondary" style="height: 32px; padding: 0 12px; font-size: 12px;" onclick="handleEmailLogout()">로그아웃</button>
       </div>
     </div>
 
@@ -171,15 +171,15 @@
     const auth = firebase.auth();
     const db = firebase.firestore();
 
-    // 기존에 생성해서 사용하시던 구글 Apps Script 웹 앱 URL 주소입니다. 그대로 작동합니다.
+    // 기존 웹 앱 URL 주소
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyTS-n6dNxhXGHxck-BL97z9l2PPrqZbl0tqjtPIP44MVFtyOiTwizk4jva8GMuV38p/exec';
 
     let currentUser = null;
 
     /* =======================================================
-       1. Authentication (이메일/비밀번호 가입 및 로그인 제어)
+       1. Authentication (이메일/비밀번호 로직 완전 고정)
        ======================================================= */
-    async function handleRegister() {
+    async function handleEmailRegister() {
       const email = document.getElementById('authEmail').value.trim();
       const password = document.getElementById('authPassword').value.trim();
       if(!email || !password) return alert('이메일과 비밀번호를 입력해주세요.');
@@ -193,7 +193,7 @@
       }
     }
 
-    async function handleLogin() {
+    async function handleEmailLogin() {
       const email = document.getElementById('authEmail').value.trim();
       const password = document.getElementById('authPassword').value.trim();
       if(!email || !password) return alert('이메일과 비밀번호를 입력해주세요.');
@@ -205,12 +205,12 @@
       }
     }
 
-    function handleLogout() {
+    function handleEmailLogout() {
       auth.signOut();
       alert('로그아웃 되었습니다.');
     }
 
-    // 유저 로그인 상태 변화를 실시간으로 체크하여 화면을 열고 닫는 감시자 함수
+    // 로그인 감시자 로직 정화 (구글 로그인 유도 흔적 차단)
     auth.onAuthStateChanged((user) => {
       currentUser = user;
       const authForm = document.getElementById('authForm');
@@ -219,15 +219,13 @@
       const mainContent = document.getElementById('mainContent');
 
       if (user) {
-        // 로그인 성공 시 UI 변환
         authForm.style.display = 'none';
         userInfoBox.style.display = 'flex';
         lockNotice.style.display = 'none';
         mainContent.style.display = 'flex';
         document.getElementById('userEmailDisplay').textContent = user.email;
-        loadHistory(); // 유저별 DB 기록 로드
+        loadHistory();
       } else {
-        // 로그아웃 상태 UI 변환
         authForm.style.display = 'block';
         userInfoBox.style.display = 'none';
         lockNotice.style.display = 'block';
@@ -244,7 +242,6 @@
       const question = document.getElementById('questionInput').value.trim();
       if (!question) return alert('정서를 분석할 문장을 입력해주세요.');
 
-      // 진로 융합형 하드코딩 프롬프트 구성 (국어국문학 가치 가이드)
       const literaryPrompt = `[국어국문학 정서 멘토 프로토콜]
       사용자가 작성한 문장: "${question}"
       
@@ -272,7 +269,6 @@
         document.getElementById('status').textContent = '감성 분석 및 표현 처방 완료';
         document.getElementById('ttsBtn').style.display = 'block';
 
-        // 4. Firestore DB에 데이터 누적 보관
         await saveToFirestore(question, aiAnswer);
 
       } catch (error) {
@@ -286,94 +282,3 @@
 
     function setLoading(isLoading) {
       const askBtn = document.getElementById('askBtn');
-      askBtn.disabled = isLoading;
-      askBtn.textContent = isLoading ? '정서 분석 중...' : '감성 분석 및 멘토링 요청';
-    }
-
-    /* =======================================================
-       3. TTS (Text-to-Speech) Web Speech API 연동
-       ======================================================= */
-    function playTTS() {
-      const text = document.getElementById('answerBox').textContent;
-      if (!text || text.startsWith('아직 분석')) return;
-
-      if (window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel();
-        document.getElementById('ttsBtn').textContent = "🔊 음성으로 듣기";
-      } else {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'ko-KR';
-        utterance.rate = 0.95; // 문학적인 느낌을 살려 살짝 여유 있는 속도로 설정
-        
-        utterance.onend = () => {
-          document.getElementById('ttsBtn').textContent = "🔊 음성으로 듣기";
-        };
-        
-        document.getElementById('ttsBtn').textContent = "⏹️ 낭독 중지하기";
-        window.speechSynthesis.speak(utterance);
-      }
-    }
-
-    /* =======================================================
-       4. Firestore Database 연동 (유저 데이터 실시간 CRUD)
-       ======================================================= */
-    async function saveToFirestore(userQuestion, aiAnswer) {
-      if(!currentUser) return;
-      try {
-        await db.collection("literary_logs").add({
-          userEmail: currentUser.email,
-          uid: currentUser.uid,
-          question: userQuestion,
-          answer: aiAnswer,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        loadHistory(); // 리스트 즉시 리프레시
-      } catch(e) {
-        console.error("Firestore 저장 에러:", e);
-      }
-    }
-
-    async function loadHistory() {
-      if(!currentUser) return;
-      try {
-        const snapshot = await db.collection("literary_logs")
-          .where("uid", "==", currentUser.uid)
-          .orderBy("createdAt", "desc")
-          .limit(3) // 발표용이므로 복잡하지 않게 최신 3개만 매핑
-          .get();
-
-        const historyList = document.getElementById('historyList');
-        if(snapshot.empty) {
-          historyList.innerHTML = `<p style="color:#999; font-size:13px;">아직 기록장이 비어 있습니다. 첫 감성 분석을 시도해 보세요!</p>`;
-          return;
-        }
-
-        let html = "";
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          const time = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleString() : "방금 전";
-          html += `
-            <div class="history-card">
-              <div style="font-weight:bold; color:var(--primary-color); margin-bottom:4px;">💬 내 문장: "${data.question}"</div>
-              <div style="color:#555; white-space:pre-wrap; font-size:12.5px; background:#fcfcfc; padding:10px; border-radius:8px; margin-top:5px; border-left:3px solid #ccc;">${data.answer.substring(0, 180)}...</div>
-              <div style="text-align:right; font-size:11px; color:#aaa; margin-top:6px;">⏱️ 기록 시각: ${time}</div>
-            </div>
-          `;
-        });
-        historyList.innerHTML = html;
-      } catch(e) {
-        console.error("Firestore 읽기 에러:", e);
-        document.getElementById('historyList').innerHTML = `<p style="color:red; font-size:13px;">기록 로드 실패: ${e.message}</p>`;
-      }
-    }
-
-    function clearPage() {
-      document.getElementById('questionInput').value = '';
-      document.getElementById('answerBox').textContent = '아직 답변이 없습니다.';
-      document.getElementById('status').textContent = '';
-      document.getElementById('ttsBtn').style.display = 'none';
-      if(window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-    }
-  </script>
-</body>
-</html>
