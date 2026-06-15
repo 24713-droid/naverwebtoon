@@ -286,4 +286,78 @@
 
       if (window.speechSynthesis.speaking) {
         window.speechSynthesis.cancel();
-        document.getElementById('ttsBtn').textContent = "🔊
+        document.getElementById('ttsBtn').textContent = "🔊 음성으로 듣기";
+      } else {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'ko-KR';
+        utterance.rate = 0.95;
+        
+        utterance.onend = () => {
+          document.getElementById('ttsBtn').textContent = "🔊 음성으로 듣기";
+        };
+        
+        document.getElementById('ttsBtn').textContent = "⏹️ 낭독 중지하기";
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
+    async function saveToFirestore(userQuestion, aiAnswer) {
+      if(!currentUser) return;
+      try {
+        await db.collection("literary_logs").add({
+          userEmail: currentUser.email,
+          uid: currentUser.uid,
+          question: userQuestion,
+          answer: aiAnswer,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        loadHistory(); 
+      } catch(e) {
+        console.error("Firestore 저장 에러:", e);
+      }
+    }
+
+    async function loadHistory() {
+      if(!currentUser) return;
+      try {
+        const snapshot = await db.collection("literary_logs")
+          .where("uid", "==", currentUser.uid)
+          .orderBy("createdAt", "desc")
+          .limit(3)
+          .get();
+
+        const historyList = document.getElementById('historyList');
+        if(snapshot.empty) {
+          historyList.innerHTML = `<p style="color:#999; font-size:13px;">아직 기록장이 비어 있습니다. 첫 감성 분석을 시도해 보세요!</p>`;
+          return;
+        }
+
+        let html = "";
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          const time = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleString() : "방금 전";
+          html += `
+            <div class="history-card">
+              <div style="font-weight:bold; color:var(--primary-color); margin-bottom:4px;">💬 내 문장: "${data.question}"</div>
+              <div style="color:#555; white-space:pre-wrap; font-size:12.5px; background:#fcfcfc; padding:10px; border-radius:8px; margin-top:5px; border-left:3px solid #ccc;">${data.answer.substring(0, 180)}...</div>
+              <div style="text-align:right; font-size:11px; color:#aaa; margin-top:6px;">⏱️ 기록 시각: ${time}</div>
+            </div>
+          `;
+        });
+        historyList.innerHTML = html;
+      } catch(e) {
+        console.error("Firestore 읽기 에러:", e);
+        document.getElementById('historyList').innerHTML = `<p style="color:red; font-size:13px;">기록 로드 실패: ${e.message}</p>`;
+      }
+    }
+
+    function clearPage() {
+      document.getElementById('questionInput').value = '';
+      document.getElementById('answerBox').textContent = '아직 답변이 없습니다.';
+      document.getElementById('status').textContent = '';
+      document.getElementById('ttsBtn').style.display = 'none';
+      if(window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+    }
+  </script>
+</body>
+</html>
