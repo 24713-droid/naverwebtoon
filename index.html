@@ -162,7 +162,6 @@
     async function askChatGPT() {
       const question = document.getElementById('questionInput').value.trim();
       if (!question) return alert('정서를 분석할 문장을 입력해주세요.');
-      if (APPS_SCRIPT_URL.includes('https://script.google.com/macros/s/AKfycbz9kDTbqnDO-Pj6lpt0agILLi5nfQZGdoJ1Pv9GJ2dKxtScyxQJl-7-u0VPG8MOXXzL/exec')) return alert('APPS_SCRIPT_URL에 본인의 진짜 웹 앱 주소를 넣어주셔야 AI가 작동합니다.');
 
       const literaryPrompt = `[국어국문학 정서 멘토 프로토콜]
       사용자가 작성한 문장: "${question}"
