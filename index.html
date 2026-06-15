@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI 감성 국어 멘토 | 문학적 성찰의 시간</title>
   
-  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 
   <style>
     :root {
@@ -121,3 +121,169 @@
         <button class="btn-secondary" style="height: 32px; padding: 0 12px; font-size: 12px;" onclick="handleEmailLogout()">로그아웃</button>
       </div>
     </div>
+
+    <div id="lockNotice" class="lock-notice">
+      🔒 위 가입처에서 로그인하시면 AI 멘토링 서비스를 이용할 수 있습니다.
+    </div>
+
+    <div id="mainContent" class="main-content">
+      <div>
+        <div style="font-weight: bold; margin-bottom: 6px;">✍️ 오늘의 감정 문장 입력</div>
+        <textarea id="questionInput" placeholder="오늘의 기분이나 생각나는 문장을 적어보세요. (예: 요즘 시험 공부 때문에 너무 지치고 무기력해.)"></textarea>
+      </div>
+
+      <div class="button-row">
+        <button class="btn-secondary" onclick="clearPage()">초기화</button>
+        <button class="btn-primary" id="askBtn" onclick="askChatGPT()">감성 분석 및 멘토링 요청</button>
+      </div>
+
+      <div id="status" style="font-size: 13px; color: #667085; min-height: 20px;"></div>
+
+      <div>
+        <div class="result-label">
+          <span>✨ AI 문학 멘토의 정서 처방전</span>
+          <button class="btn-dark" id="ttsBtn" style="height:32px; padding:0 12px; font-size:12px; display:none;" onclick="playTTS()">🔊 음성으로 듣기</button>
+        </div>
+        <div id="answerBox" class="result-box">아직 분석 요청이 없습니다. 문장을 입력하고 버튼을 눌러보세요.</div>
+      </div>
+
+      <div class="history-section">
+        <h3 style="font-size: 16px; margin: 0 0 12px 0; color: var(--primary-color);">📖 나의 문학 감성 기록장 (최근 3개)</h3>
+        <div id="historyList">
+          <p style="color:#999; font-size:13px;">기록을 불러오는 중입니다...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 파이어베이스 계정 연동 정보
+    const firebaseConfig = {
+      apiKey: "AIzaSyBNIN7xk6CMg2-s3zdcIKhJgUg5GOCJqOk",
+      authDomain: "test-efa64.firebaseapp.com",
+      databaseURL: "https://test-efa64-default-rtdb.firebaseio.com",
+      projectId: "test-efa64",
+      storageBucket: "test-efa64.firebasestorage.app",
+      messagingSenderId: "568799236531",
+      appId: "1:568799236531:web:f29b3a2c6cd92e66137bc6",
+      measurementId: "G-5D6YJP8MQJ"
+    };
+    
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // 구글 앱스 스크립트 주소
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyTS-n6dNxhXGHxck-BL97z9l2PPrqZbl0tqjtPIP44MVFtyOiTwizk4jva8GMuV38p/exec';
+
+    let currentUser = null;
+
+    async function handleEmailRegister() {
+      const email = document.getElementById('authEmail').value.trim();
+      const password = document.getElementById('authPassword').value.trim();
+      if(!email || !password) return alert('이메일과 비밀번호를 입력해주세요.');
+      if(password.length < 6) return alert('비밀번호는 보안상 6자리 이상이어야 합니다.');
+
+      try {
+        await auth.createUserWithEmailAndPassword(email, password);
+        alert('간편 회원가입이 완료되어 자동으로 로그인되었습니다!');
+      } catch(error) {
+        alert('가입 실패 원인: ' + error.message);
+      }
+    }
+
+    async function handleEmailLogin() {
+      const email = document.getElementById('authEmail').value.trim();
+      const password = document.getElementById('authPassword').value.trim();
+      if(!email || !password) return alert('이메일과 비밀번호를 입력해주세요.');
+
+      try {
+        await auth.signInWithEmailAndPassword(email, password);
+      } catch(error) {
+        alert('로그인 실패 원인: ' + error.message);
+      }
+    }
+
+    function handleEmailLogout() {
+      auth.signOut();
+      alert('로그아웃 되었습니다.');
+    }
+
+    auth.onAuthStateChanged((user) => {
+      currentUser = user;
+      const authForm = document.getElementById('authForm');
+      const userInfoBox = document.getElementById('userInfoBox');
+      const lockNotice = document.getElementById('lockNotice');
+      const mainContent = document.getElementById('mainContent');
+
+      if (user) {
+        authForm.style.display = 'none';
+        userInfoBox.style.display = 'flex';
+        lockNotice.style.display = 'none';
+        mainContent.style.display = 'flex';
+        document.getElementById('userEmailDisplay').textContent = user.email;
+        loadHistory(); 
+      } else {
+        authForm.style.display = 'block';
+        userInfoBox.style.display = 'none';
+        lockNotice.style.display = 'block';
+        mainContent.style.display = 'none';
+        document.getElementById('authEmail').value = '';
+        document.getElementById('authPassword').value = '';
+      }
+    });
+
+    async function askChatGPT() {
+      const question = document.getElementById('questionInput').value.trim();
+      if (!question) return alert('정서를 분석할 문장을 입력해주세요.');
+
+      const literaryPrompt = `[국어국문학 정서 멘토 프로토콜]
+      사용자가 작성한 문장: "${question}"
+      너는 다정한 언어학자이자 시인이야. 다음 양식에 맞춰 한글로 답변해줘:
+      1. 문장 속에 담긴 화자의 감정 형태 요약 분석 (예: 불안, 외로움, 무기력 등)
+      2. 이 감정을 따스하게 위로하거나 대변해주는 아름다운 '순우리말 단어' 하나 제안 및 의미 설명
+      3. 이 정서와 어울리는 한국 현대시의 유명한 '시 한 구절' 추천 및 응원의 한마디 문학적으로 작성하기.`;
+
+      try {
+        setLoading(true);
+        document.getElementById('answerBox').textContent = 'AI 문학 멘토가 문장을 심도 있게 분석 중입니다...';
+        document.getElementById('status').textContent = 'Apps Script 인공지능 허브와 안전하게 통신하고 있습니다.';
+        document.getElementById('ttsBtn').style.display = 'none';
+
+        const response = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ question: literaryPrompt })
+        });
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+
+        const aiAnswer = data.answer || '답변 전달 체계에 오류가 발생했습니다.';
+        document.getElementById('answerBox').textContent = aiAnswer;
+        document.getElementById('status').textContent = '감성 분석 및 표현 처방 완료';
+        document.getElementById('ttsBtn').style.display = 'block';
+
+        await saveToFirestore(question, aiAnswer);
+
+      } catch (error) {
+        console.error(error);
+        document.getElementById('answerBox').textContent = '오류가 발생했습니다.\n구글 웹 앱 배포 설정(액세스 권한: 모든 사용자) 혹은 주소를 확인하세요.\n\n' + error.message;
+        document.getElementById('status').textContent = '요청 처리 실패';
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function setLoading(isLoading) {
+      const askBtn = document.getElementById('askBtn');
+      askBtn.disabled = isLoading;
+      askBtn.textContent = isLoading ? '정서 분석 중...' : '감성 분석 및 멘토링 요청';
+    }
+
+    function playTTS() {
+      const text = document.getElementById('answerBox').textContent;
+      if (!text || text.startsWith('아직 분석')) return;
+
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        document.getElementById('ttsBtn').textContent = "🔊
